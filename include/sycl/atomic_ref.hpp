@@ -23,6 +23,8 @@
 
 #include "access.hpp"
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 #if !PARAS_GPU_BACKEND
@@ -69,6 +71,23 @@ inline constexpr std::memory_order to_std(memory_order o) {
 }
 #endif
 
+#if PARAS_GPU_BACKEND
+
+template <size_t Bytes> struct paras_cas_uint;
+template <> struct paras_cas_uint<4> { using type = unsigned int; };
+template <> struct paras_cas_uint<8> { using type = unsigned long long; };
+
+
+template <typename To, typename From>
+PARAS_KERNEL_HD To reinterpret_bits(const From &src) noexcept {
+  static_assert(sizeof(To) == sizeof(From),
+                "reinterpret_bits requires matching sizes");
+  To dst;
+  memcpy(&dst, &src, sizeof(To));
+  return dst;
+}
+#endif
+
 template <typename T, memory_order DefaultOrder = memory_order::relaxed,
           memory_scope DefaultScope = memory_scope::device,
           access::address_space AddressSpace =
@@ -98,6 +117,60 @@ private:
 #if !PARAS_GPU_BACKEND
   std::atomic<T> *atomic_ptr() const noexcept {
     return reinterpret_cast<std::atomic<T> *>(ptr);
+  }
+#endif
+
+#if PARAS_GPU_BACKEND
+ 
+  template <typename BinOp>
+  PARAS_KERNEL_HD T cas_loop_word(T v, BinOp op) const noexcept {
+    using U = typename paras_cas_uint<sizeof(T)>::type;
+    U *uptr = reinterpret_cast<U *>(ptr);
+    U old_bits = *uptr;
+    U assumed_bits;
+    do {
+      assumed_bits = old_bits;
+      T assumed_val = reinterpret_bits<T>(assumed_bits);
+      T new_val = op(assumed_val, v);
+      U new_bits = reinterpret_bits<U>(new_val);
+      old_bits = atomicCAS(uptr, assumed_bits, new_bits);
+    } while (assumed_bits != old_bits);
+    return reinterpret_bits<T>(old_bits);
+  }
+
+  template <typename BinOp>
+  PARAS_KERNEL_HD T cas_loop_masked16(T v, BinOp op) const noexcept {
+    uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+    uintptr_t aligned_addr = addr & ~uintptr_t(3);
+    unsigned int byte_offset = static_cast<unsigned int>(addr - aligned_addr);
+    unsigned int shift = byte_offset * 8;
+    unsigned int mask = 0xFFFFu << shift;
+    unsigned int *word_ptr = reinterpret_cast<unsigned int *>(aligned_addr);
+    unsigned int old_word = *word_ptr;
+    unsigned int assumed_word;
+
+    do {
+      assumed_word = old_word;
+      unsigned short assumed_half =static_cast<unsigned short>((assumed_word >> shift) & 0xFFFFu);
+      T assumed_val = reinterpret_bits<T>(assumed_half);
+      T new_val = op(assumed_val, v);
+      unsigned short new_half =reinterpret_bits<unsigned short>(new_val);
+      unsigned int new_word =(assumed_word & ~mask) | (static_cast<unsigned int>(new_half) << shift);
+      old_word = atomicCAS(word_ptr, assumed_word, new_word);
+      
+    } while (assumed_word != old_word);
+
+    unsigned short old_half = static_cast<unsigned short>((old_word >> shift) & 0xFFFFu);
+    return reinterpret_bits<T>(old_half);
+  }
+
+  template <typename BinOp>
+  PARAS_KERNEL_HD T cas_loop(T v, BinOp op) const noexcept {
+    if constexpr (sizeof(T) == 2) {
+      return cas_loop_masked16(v, op);
+    } else {
+      return cas_loop_word(v, op);
+    }
   }
 #endif
 
@@ -132,7 +205,9 @@ public:
   T fetch_add(T v, memory_order o = default_read_modify_write_order,
               memory_scope = default_scope) const noexcept {
 #if PARAS_GPU_BACKEND
-    return atomicAdd(ptr, v);
+    return cas_loop(v, [] PARAS_KERNEL_HD(T a, T b) {
+      return static_cast<T>(a + b);
+    });
 #else
     return atomic_ptr()->fetch_add(v, to_std(o));
 #endif
@@ -142,7 +217,9 @@ public:
   T fetch_sub(T v, memory_order o = default_read_modify_write_order,
               memory_scope = default_scope) const noexcept {
 #if PARAS_GPU_BACKEND
-    return atomicAdd(ptr, -v);
+    return cas_loop(v, [] PARAS_KERNEL_HD(T a, T b) {
+      return static_cast<T>(a - b);
+    });
 #else
     return atomic_ptr()->fetch_sub(v, to_std(o));
 #endif
@@ -152,7 +229,9 @@ public:
   T fetch_or(T v, memory_order o = default_read_modify_write_order,
              memory_scope = default_scope) const noexcept {
 #if PARAS_GPU_BACKEND
-    return atomicOr(ptr, v);
+    return cas_loop(v, [] PARAS_KERNEL_HD(T a, T b) {
+      return static_cast<T>(a | b);
+    });
 #else
     return atomic_ptr()->fetch_or(v, to_std(o));
 #endif
@@ -162,7 +241,9 @@ public:
   T fetch_xor(T v, memory_order o = default_read_modify_write_order,
               memory_scope = default_scope) const noexcept {
 #if PARAS_GPU_BACKEND
-    return atomicXor(ptr, v);
+    return cas_loop(v, [] PARAS_KERNEL_HD(T a, T b) {
+      return static_cast<T>(a ^ b);
+    });
 #else
     return atomic_ptr()->fetch_xor(v, to_std(o));
 #endif
@@ -172,7 +253,9 @@ public:
   T fetch_and(T v, memory_order o = default_read_modify_write_order,
               memory_scope = default_scope) const noexcept {
 #if PARAS_GPU_BACKEND
-    return atomicAnd(ptr, v);
+    return cas_loop(v, [] PARAS_KERNEL_HD(T a, T b) {
+      return static_cast<T>(a & b);
+    });
 #else
     return atomic_ptr()->fetch_and(v, to_std(o));
 #endif
@@ -182,7 +265,9 @@ public:
   T fetch_min(T v, memory_order o = default_read_modify_write_order,
               memory_scope = default_scope) const noexcept {
 #if PARAS_GPU_BACKEND
-    return atomicMin(ptr, v);
+    return cas_loop(v, [] PARAS_KERNEL_HD(T a, T b) {
+      return b < a ? b : a;
+    });
 #else
     T old = atomic_ptr()->load(to_std(o));
     while (v < old &&
@@ -196,7 +281,9 @@ public:
   T fetch_max(T v, memory_order o = default_read_modify_write_order,
               memory_scope = default_scope) const noexcept {
 #if PARAS_GPU_BACKEND
-    return atomicMax(ptr, v);
+    return cas_loop(v, [] PARAS_KERNEL_HD(T a, T b) {
+      return b > a ? b : a;
+    });
 #else
     T old = atomic_ptr()->load(to_std(o));
     while (v > old &&
