@@ -73,6 +73,29 @@ public:
   PARAS_KERNEL_HD
   range_type get_max_local_range() const { return get_local_range(); }
 
+#if PARAS_GPU_BACKEND
+  PARAS_KERNEL_D
+  linear_id_type get_group_linear_id() const {
+    const unsigned linear_id =
+        threadIdx.x + threadIdx.y * blockDim.x +
+        threadIdx.z * blockDim.x * blockDim.y;
+    return linear_id / warp_size;
+  } // 0-based indexing
+
+  PARAS_KERNEL_D
+  linear_id_type get_group_linear_range() const {
+    const unsigned work_group_size =
+        blockDim.x * blockDim.y * blockDim.z;
+    return (work_group_size + warp_size - 1) / warp_size;
+  }
+#else
+  PARAS_KERNEL_HD
+  linear_id_type get_group_linear_id() const { return 0; }
+
+  PARAS_KERNEL_HD
+  linear_id_type get_group_linear_range() const { return 1; }
+#endif
+
   PARAS_KERNEL_HD
   bool leader() const { return get_local_linear_id() == 0; }
 };
