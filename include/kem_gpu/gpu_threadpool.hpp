@@ -44,6 +44,7 @@
 #include <iostream>
 
 #include "sycl/handler.hpp"
+#include "sycl/property_list.hpp"
 #include "sycl/queue.hpp"
 #include "utilities/selector_logic.hpp"
 
@@ -69,8 +70,10 @@ public:
   }
 
   template <typename Selector>
-  explicit cuda_threadpool(const Selector &sel)
-      : dev_(::paras_extension::select_device_with_selector(sel)) {
+  explicit cuda_threadpool(const Selector &sel,
+                           const sycl::property_list &props = {})
+      : dev_(::paras_extension::select_device_with_selector(sel)),
+        props_(props) {
     initialize_stream_for_device();
   }
 
