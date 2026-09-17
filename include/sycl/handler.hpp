@@ -61,6 +61,12 @@ public:
   template <typename KernelName, typename Func, int dim>
   void parallel_for(const nd_range<dim> &r, Func f);
 
+  template <typename Func, int dim>
+  void parallel_for(range<dim> r, Func f);
+
+  template <typename Func, int dim>
+  void parallel_for(const nd_range<dim> &r, Func f);
+
   template <typename Func> void interop_task(Func f) {
     interop_handle ih(static_cast<void *>(pool_), sycl::backend::host);
     f(ih);

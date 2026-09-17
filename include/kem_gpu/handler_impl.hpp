@@ -28,6 +28,11 @@ namespace sycl {
 
 template <typename KernelName, typename Func, int dim>
 void handler::parallel_for(range<dim> r, Func f) {
+  parallel_for(r, f);
+}
+
+template <typename Func, int dim>
+void handler::parallel_for(range<dim> r, Func f) {
   if (gpu_pool_ == nullptr) {
     throw std::runtime_error("GPU handler has no cuda_threadpool backend");
   }
@@ -48,6 +53,11 @@ void handler::parallel_for(range<dim> r, Func f) {
 }
 
 template <typename KernelName, typename Func, int dim>
+void handler::parallel_for(const nd_range<dim> &r, Func f) {
+  parallel_for(r, f);
+}
+
+template <typename Func, int dim>
 void handler::parallel_for(const nd_range<dim> &r, Func f) {
   if (gpu_pool_ == nullptr) {
     throw std::runtime_error("GPU handler has no cuda_threadpool backend");
