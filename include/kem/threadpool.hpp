@@ -27,7 +27,9 @@
 #include "sycl/event.hpp"
 #include "sycl/id.hpp"
 #include "sycl/item.hpp"
+#include "sycl/property_list.hpp"
 #include "sycl/range.hpp"
+#include "utilities/selector_logic.hpp"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -47,19 +49,21 @@ public:
 
   sycl::backend get_backend() const { return sycl::backend::host; }
 
-  template <typename Selector> threadpool(const Selector &) {}
+  template <typename Selector>
+  explicit threadpool(const Selector &selector,
+                      const sycl::property_list &props = {})
+      : dev_(::paras_extension::select_device_with_selector(selector)),
+        props_(props) {}
 
   explicit threadpool(const sycl::context &ctx, const sycl::device &dev,
                       const sycl::property_list &props = {})
       : ctx_(ctx), dev_(dev) {
-    (void)props;
+    props_ = props;
   }
 
   explicit threadpool(const sycl::device &dev,
                       const sycl::property_list &props = {})
-      : dev_(dev) {
-    (void)props;
-  }
+      : dev_(dev), props_(props) {}
 
   static unsigned get_num_threads();
 
@@ -134,6 +138,7 @@ public:
 private:
   sycl::context ctx_{};
   sycl::device dev_{};
+  sycl::property_list props_{};
 };
 
 #include "threadpool_execute_1D.hpp"
