@@ -117,7 +117,7 @@ public:
          std::uint64_t global_mem_size_bytes,
          info::local_mem_type local_mem_type, bool is_cpu, bool is_gpu,
          bool is_accelerator, int native_id,
-         bool fp16, bool queue_profiling); 
+         bool fp16, bool fp64, bool queue_profiling); 
 
   template <typename DeviceSelector>
   explicit device(const DeviceSelector &) : device() {}
@@ -137,6 +137,8 @@ public:
       return have_fp16_;
     case aspect::queue_profiling:
       return have_queue_profiling_;
+    case aspect::fp64:
+      return have_fp64_;
     default:
       return false;
     }
@@ -184,6 +186,7 @@ private:
 
   int native_id_{0}; 
   bool have_fp16_{false} ;
+  bool have_fp64_{false};
   bool have_queue_profiling_{false} ;
 };
 

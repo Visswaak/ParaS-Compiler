@@ -26,6 +26,7 @@ namespace sycl {
     enum class aspect : uint64_t {
         cpu,
         fp16, 
+        fp64,
         queue_profiling 
     };
 

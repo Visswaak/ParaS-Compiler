@@ -284,6 +284,30 @@ inline double pow(double x, double y) { return ::pow(x, y); }
 PARAS_KERNEL_HD
 inline float pow(float x, float y) { return ::powf(x, y); }
 
+template<typename T>
+PARAS_KERNEL_HD inline T pown(T x, int y)
+{
+    return pow(x, static_cast<T>(y));
+}
+
+PARAS_KERNEL_HD
+inline float ldexp(float x, int k) { return ::ldexpf(x, k); }
+
+PARAS_KERNEL_HD
+inline double ldexp(double x, int k) { return ::ldexp(x, k); }
+
+PARAS_KERNEL_HD
+inline float fabs(float x) { return ::fabsf(x); }
+
+PARAS_KERNEL_HD
+inline double fabs(double x) { return ::fabs(x); }
+
+PARAS_KERNEL_HD
+inline float frexp(float x, int *exp) { return ::frexpf(x, exp); }
+
+PARAS_KERNEL_HD
+inline double frexp(double x, int *exp) { return ::frexp(x, exp); }
+
 template <typename T,
           std::enable_if_t<std::is_same_v<std::remove_cv_t<T>, float> ||
                                std::is_same_v<std::remove_cv_t<T>, double>,

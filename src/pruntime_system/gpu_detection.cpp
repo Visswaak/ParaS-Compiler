@@ -191,6 +191,23 @@ get_visible_nvidia_indices(const std::size_t physicalDeviceCount) {
   return indices;
 }
 
+
+static inline bool nvidia_supports_fp64(const std::string &compute_cap) {
+
+  const auto dot = compute_cap.find('.');
+  if (dot == std::string::npos)
+    return false;
+
+  const int major = std::atoi(compute_cap.substr(0, dot).c_str());
+  const int minor = std::atoi(compute_cap.substr(dot + 1).c_str());
+
+  if (major > 1)
+    return true;
+
+  return major == 1 && minor >= 3;
+}
+
+
 std::vector<sycl::device> detect_nvidia_gpus() {
   std::vector<sycl::device> out;
 
@@ -233,10 +250,12 @@ std::vector<sycl::device> detect_nvidia_gpus() {
       versionString += " | CUDA Version " + cuda_ver;
     }
 
+    const bool haveFp64 = nvidia_supports_fp64(cap);
+
     out.emplace_back(::paras_extension::device_ctor_tag{}, name, "NVIDIA", drv,
                      versionString, computeUnits, 1024, mem_bytes,
                      sycl::info::local_mem_type::local, false, true, false,
-                     static_cast<int>(logicalId), haveFp16,  true);
+                     static_cast<int>(logicalId), haveFp16, haveFp64, true);
   }
 #endif
 
@@ -364,6 +383,11 @@ static inline std::uint32_t amd_cu_fallback(const std::string &name,
   return 0;
 }
 
+static inline bool amd_supports_fp64(const amd_gpu_info &gpu) {
+  (void) gpu;
+  return true;
+}
+  
 static inline bool amd_supports_fp16(const std::string& gfx) {
     if (gfx.empty())
     return false;
@@ -402,13 +426,15 @@ std::vector<sycl::device> detect_amd_gpus() {
       cus = amd_cu_fallback(name, g.gfx);
 
     std::uint64_t mem_bytes = g.vram_total_bytes;
+ 
+    const bool haveFp64 = amd_supports_fp64(g);
 
     const bool haveFp16 = amd_supports_fp16(g.gfx);
 
     out.emplace_back(::paras_extension::device_ctor_tag{}, name, "AMD",
                      drv.empty() ? "unknown" : drv, version, cus, 1024,
                      mem_bytes, sycl::info::local_mem_type::local, false, true,
-                     false, g.idx, haveFp16,  false);
+                     false, g.idx, haveFp16, haveFp64, false);
   }
 #endif
 

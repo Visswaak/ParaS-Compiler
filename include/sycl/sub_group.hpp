@@ -101,9 +101,36 @@ PARAS_KERNEL_HD inline T reduce_over_group(Group g, T value,
 
     return paras_shfl(activeMask, value, 0);
   } else {
-    return value;
+    
+	  #if defined(PARAS_CUDA_BACKEND)
+
+      __shared__ T reduction_data[1024];
+
+      const unsigned local_id = static_cast<unsigned>(threadIdx.x) + static_cast<unsigned>(threadIdx.y) * static_cast<unsigned>(blockDim.x) + static_cast<unsigned>(threadIdx.z) * static_cast<unsigned>(blockDim.x) * static_cast<unsigned>(blockDim.y);
+
+      const unsigned group_size = static_cast<unsigned>(g.get_local_linear_range());
+
+      reduction_data[local_id] = value;
+
+      paras_syncthreads();
+
+      for(unsigned active = group_size; active > 1; active = (active + 1) / 2){
+
+           const unsigned half = (active + 1 )/2;
+
+            if(local_id < half && local_id + half < active){
+		 reduction_data[local_id] = binary_op(reduction_data[local_id], reduction_data[local_id + half]);
+
+        }
+         paras_syncthreads();
+      }
+      return reduction_data[0];
+#else
+      return value;
+#endif
   }
 }
+
 
 template <typename T, typename BinaryOperation>
 PARAS_KERNEL_HD inline T reduce_over_group(sub_group g, T value,
