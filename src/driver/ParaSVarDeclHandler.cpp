@@ -28,11 +28,58 @@
 #include "clang/Lex/Lexer.h"
 #include <iostream>
 
+namespace {
+
+std::string backendThreadpoolName(const std::vector<std::string> &targets) {
+  for (const std::string &target : targets) {
+    if (target == "cuda")
+      return "cuda_threadpool";
+    if (target == "hip")
+      return "rocm_threadpool";
+  }
+  return "threadpool";
+}
+
+bool hasAutoTypeSpelling(const clang::VarDecl *VD) {
+  const clang::TypeSourceInfo *TSI = VD->getTypeSourceInfo();
+  return TSI && TSI->getTypeLoc().getAs<clang::AutoTypeLoc>();
+}
+
+} // namespace
+
 void VarDeclReplacer::run(
     const clang::ast_matchers::MatchFinder::MatchResult &result) {
 
+  if (const clang::CXXNewExpr *NE =
+          result.Nodes.getNodeAs<clang::CXXNewExpr>("new-queue")) {
+    const clang::CXXRecordDecl *Record =
+        NE->getAllocatedType()->getAsCXXRecordDecl();
+    if (!Record || Record->getQualifiedNameAsString() != "sycl::queue")
+      return;
+
+    clang::TypeSourceInfo *TSI = NE->getAllocatedTypeSourceInfo();
+    if (!TSI)
+      return;
+
+    clang::TypeLoc TL = TSI->getTypeLoc();
+    clang::SourceRange replaceRange = TL.getSourceRange();
+    if (!replaceRange.isValid())
+      return;
+
+    rewriter.ReplaceText(replaceRange,
+                         backendThreadpoolName(bkend_target));
+    return;
+  }
+
   if (const clang::VarDecl *VD =
           result.Nodes.getNodeAs<clang::VarDecl>("vardecl-1")) {
+    // Keep source-level `auto` declarations intact.  Their deduced type is
+    // represented as the queue type in the AST, but rewriting that deduced
+    // type would turn `auto q = new sycl::queue()` into
+    // `threadpool q = new threadpool()`, losing the pointer type.
+    if (hasAutoTypeSpelling(VD))
+      return;
+
     int flag = 0;
     const clang::Expr *StrippedExpr = VD->getInit()->IgnoreParenImpCasts();
 
@@ -481,6 +528,9 @@ void VarDeclReplacer::run(
 
   if (const clang::VarDecl *VD =
           result.Nodes.getNodeAs<clang::VarDecl>("vardecl-6")) {
+
+    if (hasAutoTypeSpelling(VD))
+      return;
 
     clang::TypeSourceInfo *TSI = VD->getTypeSourceInfo();
 
