@@ -69,6 +69,17 @@ inline constexpr std::memory_order to_std(memory_order o) {
   }
   return std::memory_order_seq_cst;
 }
+
+inline constexpr std::memory_order to_std_failure(memory_order o) {
+  switch (o) {
+  case memory_order::release:
+    return std::memory_order_relaxed;
+  case memory_order::acq_rel:
+    return std::memory_order_acquire;
+  default:
+    return to_std(o);
+  }
+}
 #endif
 
 #if PARAS_GPU_BACKEND
@@ -335,7 +346,15 @@ return compare_exchange_weak(expected, desired, order, failure, scope);
       return static_cast<T>(a + b);
     });
 #else
-    return atomic_ptr()->fetch_add(v, to_std(o));
+    const std::memory_order success_order = to_std(o);
+    const std::memory_order failure_order = to_std_failure(o);
+    T old = atomic_ptr()->load(success_order);
+    T desired;
+    do {
+      desired = static_cast<T>(old + v);
+    } while (!atomic_ptr()->compare_exchange_weak(
+        old, desired, success_order, failure_order));
+    return old;
 #endif
   }
 
@@ -347,7 +366,15 @@ return compare_exchange_weak(expected, desired, order, failure, scope);
       return static_cast<T>(a - b);
     });
 #else
-    return atomic_ptr()->fetch_sub(v, to_std(o));
+    const std::memory_order success_order = to_std(o);
+    const std::memory_order failure_order = to_std_failure(o);
+    T old = atomic_ptr()->load(success_order);
+    T desired;
+    do {
+      desired = static_cast<T>(old - v);
+    } while (!atomic_ptr()->compare_exchange_weak(
+        old, desired, success_order, failure_order));
+    return old;
 #endif
   }
 
