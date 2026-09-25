@@ -372,11 +372,6 @@ inline cuda_threadpool &sycl::queue::get_or_create_gpu_pool() const {
   return *gpu_pool_;
 }
 
-template <typename CGF>
-inline sycl::event sycl::queue::submit_gpu(CGF cgf) {
-  return get_or_create_gpu_pool().submit(std::move(cgf));
-}
-
 #include "kem_gpu/gpu_threadpool_execute_1D.hpp"
 #include "kem_gpu/gpu_threadpool_execute_1D_async.hpp"
 #include "kem_gpu/gpu_threadpool_execute_ND.hpp"
