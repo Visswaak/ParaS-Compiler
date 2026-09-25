@@ -32,7 +32,6 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <utility>
 #include <vector>
 
 class cuda_threadpool;
@@ -59,7 +58,9 @@ public:
 
   template <typename CGF> event submit(CGF cgf) {
     if (dev_.is_gpu()) {
-      return submit_gpu(std::move(cgf));
+      handler h(get_or_create_gpu_pool());
+      cgf(h);
+      return event{};
     } else {
       handler h;
       cgf(h);
@@ -116,7 +117,6 @@ private:
 
   std::shared_ptr<async_state> async_state_ = std::make_shared<async_state>();
 
-  template <typename CGF> event submit_gpu(CGF cgf);
 };
 
 inline sycl::queue::queue(const sycl::context &ctx, const sycl::device &dev,
