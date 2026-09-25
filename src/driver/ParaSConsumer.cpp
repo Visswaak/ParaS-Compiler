@@ -172,10 +172,6 @@ ParaSConsumer::ParaSConsumer(clang::Rewriter &r,
               .bind("vardecl-6")),
       &vdr_callback);
 
-  // A heap-allocated queue is not covered by the VarDecl type rewrite alone.
-  // For example, rewriting only `sycl::queue *q` would leave
-  // `new sycl::queue(...)` in the initializer.  Match the allocation itself
-  // so the allocated type is rewritten to the selected backend type too.
   matchers.addMatcher(
       clang::ast_matchers::traverse(
           clang::TK_IgnoreUnlessSpelledInSource,

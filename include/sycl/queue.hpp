@@ -32,6 +32,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 class cuda_threadpool;
@@ -41,6 +42,9 @@ namespace sycl {
 class queue {
 public:
   queue() : dev_(::paras_extension::select_device_no_selector()) {}
+
+  explicit queue(const property_list &props)
+      : dev_(::paras_extension::select_device_no_selector()), props_(props) {}
 
   explicit queue(const decltype(cpu_selector_v) &, const property_list & = {});
   explicit queue(const decltype(gpu_selector_v) &, const property_list & = {});
@@ -55,8 +59,7 @@ public:
 
   template <typename CGF> event submit(CGF cgf) {
     if (dev_.is_gpu()) {
-      handler h(get_or_create_gpu_pool());
-      cgf(h);
+      return submit_gpu(std::move(cgf));
     } else {
       handler h;
       cgf(h);
@@ -71,7 +74,7 @@ public:
 
   device get_device() const { return dev_; }
   context get_context() const { return ctx_; }
-  bool is_in_order() const { return false; }
+  bool is_in_order() const { return props_.has_in_order(); }
 
   backend get_backend() const {
     return dev_.is_gpu() ? backend::cuda : backend::host;
@@ -101,6 +104,7 @@ private:
 
   context ctx_{};
   device dev_{};
+  property_list props_{};
 
   struct async_state {
     std::mutex mtx;
@@ -111,13 +115,17 @@ private:
   inline void throw_async_exceptns();
 
   std::shared_ptr<async_state> async_state_ = std::make_shared<async_state>();
+
+  template <typename CGF> event submit_gpu(CGF cgf);
 };
 
 inline sycl::queue::queue(const sycl::context &ctx, const sycl::device &dev,
                           const sycl::property_list &props)
-    : ctx_(ctx), dev_(dev) {
-  (void)props;
-}
+    : ctx_(ctx), dev_(dev), props_(props) {}
+
+inline sycl::queue::queue(const sycl::device &dev,
+                          const sycl::property_list &props)
+    : dev_(dev), props_(props) {}
 
 inline void sycl::queue::rec_async_exceptn(std::exception_ptr ex) {
   std::lock_guard<std::mutex> lock(async_state_->mtx);

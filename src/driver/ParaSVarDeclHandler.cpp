@@ -73,10 +73,6 @@ void VarDeclReplacer::run(
 
   if (const clang::VarDecl *VD =
           result.Nodes.getNodeAs<clang::VarDecl>("vardecl-1")) {
-    // Keep source-level `auto` declarations intact.  Their deduced type is
-    // represented as the queue type in the AST, but rewriting that deduced
-    // type would turn `auto q = new sycl::queue()` into
-    // `threadpool q = new threadpool()`, losing the pointer type.
     if (hasAutoTypeSpelling(VD))
       return;
 
