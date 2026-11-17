@@ -52,6 +52,14 @@
 #if (PARAS_CUDA_BACKEND)
 #include <cuda_runtime.h>
 
+namespace paras_event_detail {
+inline void check(cudaError_t err, const char* where) {
+    if (err != cudaSuccess)
+        throw sycl::exception(sycl::make_error_code(sycl::errc::runtime),
+                              std::string(where) + ": " + cudaGetErrorString(err));
+}
+} // namespace paras_event_detail
+
 class cuda_threadpool {
 
 public:
@@ -172,10 +180,23 @@ public:
         return props_.has_profiling() ? sycl::paras_now_ns() : 0;
     }
     sycl::event paras_finish_event(std::uint64_t t0) const {
-        if (!props_.has_profiling()) {
-            return sycl::event{};
-        }
-        return sycl::event::paras_profiled(t0, t0, sycl::paras_now_ns());
+        auto native = std::shared_ptr<void>(new cudaEvent_t{}, [](void* p) {
+            cudaEventDestroy(*static_cast<cudaEvent_t*>(p));
+            delete static_cast<cudaEvent_t*>(p);
+        });
+        auto* completion = static_cast<cudaEvent_t*>(native.get());
+        paras_event_detail::check(cudaEventCreateWithFlags(completion, cudaEventDisableTiming),
+                                  "CUDA completion event creation failed");
+        paras_event_detail::check(cudaEventRecord(*completion, stream),
+                                  "CUDA completion event recording failed");
+
+        auto wait_fn = [native]() {
+            auto* event = static_cast<cudaEvent_t*>(native.get());
+            paras_event_detail::check(cudaEventSynchronize(*event),
+                                      "CUDA completion event synchronization failed");
+        };
+        const std::uint64_t now = sycl::paras_now_ns();
+        return sycl::event::paras_native_wait(std::move(native), std::move(wait_fn), t0, t0, now);
     }
     bool is_in_order() const { return props_.has_in_order(); }
     const void* paras_identity() const noexcept { return id_.get(); }
@@ -205,7 +226,7 @@ public:
     sycl::event spawn_1D_event(Func f);
 
     template <typename Func>
-    void spawn_ND(Func f);
+    sycl::event spawn_ND(Func f);
 
     void wait() {
         ensure_stream();
@@ -222,7 +243,7 @@ public:
     sycl::event parasSYCL_enqueue_custom_operation(injectCustomFunc cgf) {
         sycl::handler cgh(*this);
         cgh.parasSYCL_enqueue_custom_operation(std::move(cgf));
-        return sycl::event{};
+        return paras_finish_event(0);
     }
 
     void wait() const {
@@ -466,6 +487,14 @@ inline cuda_threadpool& sycl::queue::get_or_create_gpu_pool() const {
 #elif (PARAS_HIP_BACKEND)
 #include <hip/hip_runtime.h>
 
+namespace paras_event_detail {
+inline void check(hipError_t err, const char* where) {
+    if (err != hipSuccess)
+        throw sycl::exception(sycl::make_error_code(sycl::errc::runtime),
+                              std::string(where) + ": " + hipGetErrorString(err));
+}
+} // namespace paras_event_detail
+
 class rocm_threadpool {
 
 public:
@@ -586,10 +615,23 @@ public:
         return props_.has_profiling() ? sycl::paras_now_ns() : 0;
     }
     sycl::event paras_finish_event(std::uint64_t t0) const {
-        if (!props_.has_profiling()) {
-            return sycl::event{};
-        }
-        return sycl::event::paras_profiled(t0, t0, sycl::paras_now_ns());
+        auto native = std::shared_ptr<void>(new hipEvent_t{}, [](void* p) {
+            hipEventDestroy(*static_cast<hipEvent_t*>(p));
+            delete static_cast<hipEvent_t*>(p);
+        });
+        auto* completion = static_cast<hipEvent_t*>(native.get());
+        paras_event_detail::check(hipEventCreateWithFlags(completion, hipEventDisableTiming),
+                                  "HIP completion event creation failed");
+        paras_event_detail::check(hipEventRecord(*completion, stream),
+                                  "HIP completion event recording failed");
+
+        auto wait_fn = [native]() {
+            auto* event = static_cast<hipEvent_t*>(native.get());
+            paras_event_detail::check(hipEventSynchronize(*event),
+                                      "HIP completion event synchronization failed");
+        };
+        const std::uint64_t now = sycl::paras_now_ns();
+        return sycl::event::paras_native_wait(std::move(native), std::move(wait_fn), t0, t0, now);
     }
     bool is_in_order() const { return props_.has_in_order(); }
     const void* paras_identity() const noexcept { return id_.get(); }
@@ -619,7 +661,7 @@ public:
     sycl::event spawn_1D_event(Func f);
 
     template <typename Func>
-    void spawn_ND(Func f);
+    sycl::event spawn_ND(Func f);
 
     void wait() {
         ensure_stream();
@@ -636,7 +678,7 @@ public:
     sycl::event parasSYCL_enqueue_custom_operation(injectCustomFunc cgf) {
         sycl::handler cgh(*this);
         cgh.parasSYCL_enqueue_custom_operation(std::move(cgf));
-        return sycl::event{};
+        return paras_finish_event(0);
     }
 
     void wait() const {
@@ -894,13 +936,13 @@ inline void handler::memset(void* ptr, int value, size_t num_bytes) {
         throw std::runtime_error("handler::memset has no CUDA backend");
     }
     wait_for_dependencies();
-    (void)gpu_pool_->memset(ptr, value, num_bytes);
+    completion_ = gpu_pool_->memset(ptr, value, num_bytes);
 #elif (PARAS_HIP_BACKEND)
     if (rocm_pool_ == nullptr) {
         throw std::runtime_error("handler::memset has no HIP backend");
     }
     wait_for_dependencies();
-    (void)rocm_pool_->memset(ptr, value, num_bytes);
+    completion_ = rocm_pool_->memset(ptr, value, num_bytes);
 #endif
 }
 
@@ -910,13 +952,13 @@ inline void handler::memcpy(void* dest, const void* src, size_t num_bytes) {
         throw std::runtime_error("handler::memcpy has no CUDA backend");
     }
     wait_for_dependencies();
-    (void)gpu_pool_->memcpy(dest, src, num_bytes);
+    completion_ = gpu_pool_->memcpy(dest, src, num_bytes);
 #elif (PARAS_HIP_BACKEND)
     if (rocm_pool_ == nullptr) {
         throw std::runtime_error("handler::memcpy has no HIP backend");
     }
     wait_for_dependencies();
-    (void)rocm_pool_->memcpy(dest, src, num_bytes);
+    completion_ = rocm_pool_->memcpy(dest, src, num_bytes);
 #endif
 }
 
@@ -966,48 +1008,40 @@ sycl::interop_handle::get_native_queue<sycl::backend::hip>() const {
 #if (PARAS_CUDA_BACKEND)
 template <typename Func>
 sycl::event cuda_threadpool::spawn_1D(Func f) {
-    const std::uint64_t paras_t0 = paras_profiling_start();
-
     sycl::handler cgh(*this);
     f(cgh);
-
-    return paras_finish_event(paras_t0);
+    return cgh.get_completion_event();
 }
 
 template <typename Func>
 sycl::event cuda_threadpool::spawn_1D_event(Func f) {
-
-    spawn_1D(f);
-    return sycl::event();
+    return spawn_1D(std::move(f));
 }
 
 template <typename Func>
-void cuda_threadpool::spawn_ND(Func f) {
+sycl::event cuda_threadpool::spawn_ND(Func f) {
     sycl::handler cgh(*this); // Currently same as 1D; modify for ND ranges
     f(cgh);
+    return cgh.get_completion_event();
 }
 #elif (PARAS_HIP_BACKEND)
 template <typename Func>
 sycl::event rocm_threadpool::spawn_1D(Func f) {
-    const std::uint64_t paras_t0 = paras_profiling_start();
-
     sycl::handler cgh(*this);
     f(cgh);
-
-    return paras_finish_event(paras_t0);
+    return cgh.get_completion_event();
 }
 
 template <typename Func>
 sycl::event rocm_threadpool::spawn_1D_event(Func f) {
-
-    spawn_1D(f);
-    return sycl::event();
+    return spawn_1D(std::move(f));
 }
 
 template <typename Func>
-void rocm_threadpool::spawn_ND(Func f) {
+sycl::event rocm_threadpool::spawn_ND(Func f) {
     sycl::handler cgh(*this); // Currently same as 1D; modify for ND ranges
     f(cgh);
+    return cgh.get_completion_event();
 }
 #endif
 

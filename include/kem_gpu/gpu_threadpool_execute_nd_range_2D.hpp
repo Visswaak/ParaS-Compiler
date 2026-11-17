@@ -99,7 +99,6 @@ void cuda_threadpool::gpu_execute_nd_range_2D(const sycl::nd_range<2>& r, Func f
         global0, global1, globalRange, localRange, launchedGroupRange, f);
 
     paras_cuda_detail::check(cudaGetLastError(), "2D nd_range kernel launch failed");
-    paras_cuda_detail::check(cudaStreamSynchronize(stream), "2D nd_range kernel execution failed");
 }
 #elif (PARAS_HIP_BACKEND)
 template <typename Func>
@@ -148,7 +147,6 @@ void rocm_threadpool::gpu_execute_nd_range_2D(const sycl::nd_range<2>& r, Func f
         global0, global1, globalRange, localRange, launchedGroupRange, f);
 
     paras_rocm_detail::check(hipGetLastError(), "2D nd_range kernel launch failed");
-    paras_rocm_detail::check(hipStreamSynchronize(stream), "2D nd_range kernel execution failed");
 }
 
 #endif /** End of PARAS_CUDA_BACKEND / PARAS_HIP_BACKEND */

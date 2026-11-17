@@ -23,6 +23,7 @@
 
 #include <vector>
 #include <memory>
+#include <functional>
 #include <stdexcept>
 #include "device.hpp"
 #include "exception.hpp"
@@ -36,6 +37,7 @@ namespace sycl {
 struct paras_event_state {
     bool profiling = false;
     std::uint64_t submit = 0, start = 0, end = 0;
+    std::function<void()> wait_fn;
 };
 
 inline std::uint64_t paras_now_ns() {
@@ -73,7 +75,11 @@ public:
 
     void set_dependencies(const std::vector<event>& deps) { m_deps = deps; }
 
-    void wait() const { wait_deps(); }
+    void wait() const {
+        wait_deps();
+        if (m_impl->wait_fn)
+            m_impl->wait_fn();
+    }
 
     void wait_and_throw() const { wait(); }
 
@@ -129,11 +135,30 @@ public:
         return e;
     }
 
+    static event paras_native_wait(std::shared_ptr<void> native_state,
+                                   std::function<void()> wait_fn,
+                                   std::uint64_t submit = 0,
+                                   std::uint64_t start = 0,
+                                   std::uint64_t end = 0) {
+        event e;
+        e.m_impl->wait_fn = std::move(wait_fn);
+        e.m_impl->profiling = submit != 0 || start != 0;
+        e.m_impl->submit = submit;
+        e.m_impl->start = start;
+        e.m_impl->end = end;
+        // Keep the native completion object alive for the lifetime of the event.
+        e.m_native_state = std::move(native_state);
+        return e;
+    }
+
     const void* identity() const noexcept { return m_impl.get(); }
 
     void set_profiling(bool enabled) { m_impl->profiling = enabled; }
     void mark_complete() { m_ready = true; }
     bool is_ready() const { return m_ready; }
+
+private:
+    std::shared_ptr<void> m_native_state;
 };
 
 } // namespace sycl

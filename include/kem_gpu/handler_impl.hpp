@@ -55,6 +55,7 @@ void handler::parallel_for(range<dim> r, Func f) {
         } else {
             static_assert(dim <= 3, "Only 1D/2D/3D supported");
         }
+        completion_ = gpu_pool_->paras_finish_event(0);
 #elif (PARAS_HIP_BACKEND)
         if (rocm_pool_ == nullptr) {
             throw std::runtime_error("GPU handler has no rocm_threadpool backend");
@@ -75,6 +76,7 @@ void handler::parallel_for(range<dim> r, Func f) {
         } else {
             static_assert(dim <= 3, "Only 1D/2D/3D supported");
         }
+        completion_ = rocm_pool_->paras_finish_event(0);
 #endif
     }
 }
@@ -103,6 +105,7 @@ void handler::parallel_for(const nd_range<dim>& r, Func f) {
         } else {
             static_assert(dim <= 3, "Only 1D/2D/3D supported");
         }
+        completion_ = gpu_pool_->paras_finish_event(0);
 
 #elif (PARAS_HIP_BACKEND)
         if (rocm_pool_ == nullptr) {
@@ -122,6 +125,7 @@ void handler::parallel_for(const nd_range<dim>& r, Func f) {
         } else {
             static_assert(dim <= 3, "Only 1D/2D/3D supported");
         }
+        completion_ = rocm_pool_->paras_finish_event(0);
 #endif
     }
 }

@@ -87,20 +87,23 @@ public:
 
     template <typename CGF>
     event submit(CGF cgf) {
+        event completion{get_backend()};
         if (dev_.is_gpu()) {
 #if (PARAS_CUDA_BACKEND)
             handler h(get_or_create_gpu_pool());
             cgf(h);
+            completion = h.get_completion_event();
 #elif (PARAS_HIP_BACKEND)
             handler h(get_or_create_rocm_pool());
             cgf(h);
+            completion = h.get_completion_event();
 #endif
         } else {
             handler h;
             cgf(h);
         }
 
-        return event{get_backend()};
+        return completion;
     }
 
     template <typename CGF>
@@ -115,13 +118,19 @@ public:
     }
 
     template <typename KernelName = void, typename Func>
-    event single_task(event, Func f) {
-        return single_task<KernelName>(f);
+    event single_task(event dep, Func f) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(dep);
+            cgh.single_task<KernelName>(f);
+        });
     }
 
     template <typename KernelName = void, typename Func>
-    event single_task(const std::vector<event>&, Func f) {
-        return single_task<KernelName>(f);
+    event single_task(const std::vector<event>& deps, Func f) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(deps);
+            cgh.single_task<KernelName>(f);
+        });
     }
 
     template <typename T>
@@ -130,13 +139,20 @@ public:
     }
 
     template <typename T>
-    event fill(T* ptr, const T& pattern, std::size_t count, event) {
-        return fill(ptr, pattern, count);
+    event fill(T* ptr, const T& pattern, std::size_t count, event dep) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(dep);
+            cgh.fill(ptr, pattern, count);
+        });
     }
 
     template <typename T>
-    event fill(T* ptr, const T& pattern, std::size_t count, const std::vector<event>&) {
-        return fill(ptr, pattern, count);
+    event fill(T* ptr, const T& pattern, std::size_t count,
+               const std::vector<event>& deps) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(deps);
+            cgh.fill(ptr, pattern, count);
+        });
     }
 
     void wait() const;
@@ -159,13 +175,19 @@ public:
     }
 
     template <typename KernelName = void, typename Func, int dim>
-    event parallel_for(range<dim> r, event, Func f) {
-        return parallel_for<KernelName>(r, f);
+    event parallel_for(range<dim> r, event dep, Func f) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(dep);
+            cgh.parallel_for<KernelName>(r, f);
+        });
     }
 
     template <typename KernelName = void, typename Func, int dim>
-    event parallel_for(range<dim> r, const std::vector<event>&, Func f) {
-        return parallel_for<KernelName>(r, f);
+    event parallel_for(range<dim> r, const std::vector<event>& deps, Func f) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(deps);
+            cgh.parallel_for<KernelName>(r, f);
+        });
     }
 
     template <typename KernelName = void, typename Func, int dim>
@@ -174,13 +196,19 @@ public:
     }
 
     template <typename KernelName = void, typename Func, int dim>
-    event parallel_for(const nd_range<dim>& r, event, Func f) {
-        return parallel_for<KernelName>(r, f);
+    event parallel_for(const nd_range<dim>& r, event dep, Func f) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(dep);
+            cgh.parallel_for<KernelName>(r, f);
+        });
     }
 
     template <typename KernelName = void, typename Func, int dim>
-    event parallel_for(const nd_range<dim>& r, const std::vector<event>&, Func f) {
-        return parallel_for<KernelName>(r, f);
+    event parallel_for(const nd_range<dim>& r, const std::vector<event>& deps, Func f) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(deps);
+            cgh.parallel_for<KernelName>(r, f);
+        });
     }
 
     template <typename injectCustomFunc>
@@ -193,11 +221,17 @@ public:
         return submit([&](handler& cgh) { cgh.memset(ptr, value, numBytes); });
     }
 
-    event memset(void* ptr, int value, size_t numBytes, const std::vector<event>&) {
-        return memset(ptr, value, numBytes);
+    event memset(void* ptr, int value, size_t numBytes, const std::vector<event>& deps) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(deps);
+            cgh.memset(ptr, value, numBytes);
+        });
     }
-    event memset(void* ptr, int value, size_t numBytes, event) {
-        return memset(ptr, value, numBytes);
+    event memset(void* ptr, int value, size_t numBytes, event dep) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(dep);
+            cgh.memset(ptr, value, numBytes);
+        });
     }
 
     template <typename T>
@@ -206,24 +240,37 @@ public:
     }
 
     template <typename T>
-    event copy(const T* src, T* dest, size_t count, const std::vector<event>&) {
-        return copy(src, dest, count);
+    event copy(const T* src, T* dest, size_t count, const std::vector<event>& deps) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(deps);
+            cgh.copy(src, dest, count);
+        });
     }
 
     template <typename T>
-    event copy(const T* src, T* dest, size_t count, event) {
-        return copy(src, dest, count);
+    event copy(const T* src, T* dest, size_t count, event dep) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(dep);
+            cgh.copy(src, dest, count);
+        });
     }
 
     event memcpy(void* dest, const void* src, size_t numBytes) {
         return submit([&](handler& cgh) { cgh.memcpy(dest, src, numBytes); });
     }
 
-    event memcpy(void* dest, const void* src, size_t numBytes, event) {
-        return memcpy(dest, src, numBytes);
+    event memcpy(void* dest, const void* src, size_t numBytes, event dep) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(dep);
+            cgh.memcpy(dest, src, numBytes);
+        });
     }
-    event memcpy(void* dest, const void* src, size_t numBytes, const std::vector<event>&) {
-        return memcpy(dest, src, numBytes);
+    event memcpy(void* dest, const void* src, size_t numBytes,
+                 const std::vector<event>& deps) {
+        return submit([&](handler& cgh) {
+            cgh.depends_on(deps);
+            cgh.memcpy(dest, src, numBytes);
+        });
     }
 
     event mem_advise(const void*, size_t, int) {

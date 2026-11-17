@@ -113,7 +113,6 @@ void cuda_threadpool::gpu_execute_nd_range_1D(const sycl::nd_range<1>& r, Func f
 
     paras_cuda_detail::check(cudaGetLastError(), "1D nd_range kernel launch failed");
 
-    paras_cuda_detail::check(cudaStreamSynchronize(stream), "1D nd_range kernel execution failed");
 }
 
 #elif (PARAS_HIP_BACKEND)
@@ -172,7 +171,6 @@ void rocm_threadpool::gpu_execute_nd_range_1D(const sycl::nd_range<1>& r, Func f
 
     paras_rocm_detail::check(hipGetLastError(), "1D nd_range kernel launch failed");
 
-    paras_rocm_detail::check(hipStreamSynchronize(stream), "1D nd_range kernel execution failed");
 }
 
 #endif /** End of PARAS_CUDA_BACKEND || PARAS_HIP_BACKEND */

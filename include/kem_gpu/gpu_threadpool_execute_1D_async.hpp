@@ -48,7 +48,6 @@ void cuda_threadpool::gpu_execute_1D_async(Func f) {
     (void)cudaGetLastError();
     gpu_execute_1D_async_kernel<<<1, 1, 0, stream>>>(1, f);
     paras_cuda_detail::check(cudaGetLastError(), "async 1D kernel launch failed");
-    paras_cuda_detail::check(cudaStreamSynchronize(stream), "async 1D kernel execution failed");
 }
 
 #elif (PARAS_HIP_BACKEND)
@@ -61,7 +60,6 @@ void rocm_threadpool::gpu_execute_1D_async(Func f) {
     (void)hipGetLastError();
     gpu_execute_1D_async_kernel<<<1, 1, 0, stream>>>(1, f);
     paras_rocm_detail::check(hipGetLastError(), "async 1D kernel launch failed");
-    paras_rocm_detail::check(hipStreamSynchronize(stream), "async 1D kernel execution failed");
 }
 #endif
 #endif /** End of gpu_threadpool_execute_1D_async >*/

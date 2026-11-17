@@ -264,6 +264,8 @@ public:
 
     const std::vector<event>& get_dependencies() const { return deps_; }
 
+    const event& get_completion_event() const { return completion_; }
+
     void wait_for_dependencies() const { sycl::event::wait(deps_); }
 
     template <typename injectCustomFunc>
@@ -279,6 +281,7 @@ public:
 
         try {
             cgf(ih);
+            completion_ = gpu_pool_->paras_finish_event(0);
             async_mode_ = false;
         } catch (...) {
             async_mode_ = false;
@@ -296,6 +299,7 @@ public:
 
         try {
             cgf(ih);
+            completion_ = rocm_pool_->paras_finish_event(0);
             async_mode_ = false;
         } catch (...) {
             async_mode_ = false;
@@ -350,6 +354,7 @@ private:
     std::size_t local_memory_bytes_ = 0;
     std::vector<std::function<void()>> spec_resets_;
     bool async_mode_ = false;
+    event completion_{};
 };
 
 } // namespace sycl

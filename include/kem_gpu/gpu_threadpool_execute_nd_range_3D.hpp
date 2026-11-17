@@ -163,13 +163,6 @@ void cuda_threadpool::gpu_execute_nd_range_3D(const sycl::nd_range<3>& r, Func f
 
     const sycl::range<3> launchedGroupRange(groups0, groups1, groups2);
 
-    err = cudaStreamSynchronize(stream);
-    if (err != cudaSuccess) {
-        throw sycl::exception(sycl::make_error_code(sycl::errc::runtime),
-                              std::string("CUDA failure before 3D kernel launch: ") +
-                                  cudaGetErrorString(err));
-    }
-
     (void)cudaGetLastError();
 
     gpu_execute_nd_range_3D_kernel<<<grid, block, sharedMemoryBytes, stream>>>(
@@ -181,12 +174,6 @@ void cuda_threadpool::gpu_execute_nd_range_3D(const sycl::nd_range<3>& r, Func f
                               std::string("3D kernel launch failed: ") + cudaGetErrorString(err));
     }
 
-    err = cudaStreamSynchronize(stream);
-    if (err != cudaSuccess) {
-        throw sycl::exception(sycl::make_error_code(sycl::errc::runtime),
-                              std::string("3D kernel execution failed: ") +
-                                  cudaGetErrorString(err));
-    }
 }
 
 #elif (PARAS_HIP_BACKEND)
@@ -276,13 +263,6 @@ void rocm_threadpool::gpu_execute_nd_range_3D(const sycl::nd_range<3>& r, Func f
 
     const sycl::range<3> launchedGroupRange(groups0, groups1, groups2);
 
-    err = hipStreamSynchronize(stream);
-    if (err != hipSuccess) {
-        throw sycl::exception(sycl::make_error_code(sycl::errc::runtime),
-                              std::string("HIP failure before 3D kernel launch: ") +
-                                  hipGetErrorString(err));
-    }
-
     (void)hipGetLastError();
 
     gpu_execute_nd_range_3D_kernel<<<grid, block, sharedMemoryBytes, stream>>>(
@@ -294,11 +274,6 @@ void rocm_threadpool::gpu_execute_nd_range_3D(const sycl::nd_range<3>& r, Func f
                               std::string("3D kernel launch failed: ") + hipGetErrorString(err));
     }
 
-    err = hipStreamSynchronize(stream);
-    if (err != hipSuccess) {
-        throw sycl::exception(sycl::make_error_code(sycl::errc::runtime),
-                              std::string("3D kernel execution failed: ") + hipGetErrorString(err));
-    }
 }
 #endif
 
